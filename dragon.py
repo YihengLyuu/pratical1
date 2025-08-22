@@ -1,50 +1,47 @@
-"""
-Dragon Curve (Heighway Dragon) — PyTorch implementation
-- Uses complex tensors and vectorized operations on CPU/GPU.
-- Avoids `range` and `itertools` per user preference.
-- n_iters produces 2**n_iters + 1 points (e.g., n_iters=16 -> 65,537 points).
-"""
+# Generate Dragon Curve polyline points as a 1D complex tensor.
+# device: torch.device or str (e.g., 'cuda' or 'cpu').
+# dtype: complex dtype, default complex64 to save memory.
 import torch
 import matplotlib
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 
 def dragon_curve_points(n_iters=16, device=None, dtype=torch.complex64):
-    """
-    Generate Dragon Curve polyline points as a 1D complex tensor.
-    Args:
-        n_iters (int): number of folding iterations (>=1 recommended).
-        device: torch.device or str (e.g., 'cuda' or 'cpu').
-        dtype: complex dtype, default complex64 to save memory.
-    Returns:
-        torch.Tensor: shape [2**n_iters + 1], complex tensor of points.
-    """
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     else:
         device = torch.device(device)
 
-    # Start with two points along the real axis.
-    z = torch.tensor([0+0j, 1+0j], dtype=dtype, device=device)
+    # 总点数：2**n + 1
+    # Make this program more simplified and efficient.
+    total = (1 << n_iters) + 1
 
-    # 90° CCW rotation constant (i).
+     # 预分配（避免反复 cat）
+    z = torch.empty(total, dtype=dtype, device=device)
+
+    # 初始两个点
+    z[0] = torch.tensor(0 + 0j, dtype=dtype, device=device)
+    z[1] = torch.tensor(1 + 0j, dtype=dtype, device=device)
+
+    # 90° 逆时针旋转常数 i
     j = torch.tensor(1j, dtype=dtype, device=device)
 
-    # Use while-loop (no `range`).
+    # 当前已有长度（前 len_ 的内容有效）
+    len_ = 2
     i = 0
     while i < n_iters:
-        # Exclude the last point, reverse the prefix, translate so last point is origin
-        tail = z[:-1]
+        # 旧段的“尾巴”（不含最后一个点），反转后平移到原点再旋转并平移回来
+        pivot = z[len_ - 1]
+        tail = z[:len_ - 1]
         rev = tail.flip(0)
-        vecs = rev - z[-1]
+        # 生成新段
+        new_segment = pivot + (rev - pivot) * j
 
-        # Rotate 90° CCW and translate back
-        rotated = vecs * j
-        new_segment = z[-1] + rotated
+        # 原地写入：新段紧随其后
+        z[len_: len_ + (len_ - 1)] = new_segment
 
-        # Concatenate original polyline with the rotated copy
-        z = torch.cat([z, new_segment], dim=0)
-
+        # 更新长度：len_new = len_old + (len_old - 1)
+        len_ = len_ + (len_ - 1)
         i += 1
 
     return z
